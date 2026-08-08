@@ -1,9 +1,9 @@
 export default async function handler(req, res) {
-    const action = req.query.action || "discord";
+    const action = req.query.action || "";
 
     /*
     |--------------------------------------------------------------------------
-    | ROBLOX
+    | ROBLOX LOOKUP
     |--------------------------------------------------------------------------
     */
 
@@ -20,22 +20,35 @@ export default async function handler(req, res) {
         }
 
         try {
-            const robloxURL =
-                "https://users.roblox.com/v1/users/search?" +
-                new URLSearchParams({
-                    keyword: username,
-                    limit: "10"
-                }).toString();
+            /*
+             * Roblox username lookup
+             */
 
-            const response = await fetch(robloxURL, {
-                method: "GET",
-                headers: {
-                    "Accept": "application/json",
-                    "User-Agent": "Astral/1.0"
+            const response = await fetch(
+                "https://users.roblox.com/v1/usernames/users",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+
+                        "Accept":
+                            "application/json",
+
+                        "User-Agent":
+                            "Astral/1.0"
+                    },
+
+                    body: JSON.stringify({
+                        usernames: [username],
+                        excludeBannedUsers: false
+                    })
                 }
-            });
+            );
 
-            const text = await response.text();
+            const text =
+                await response.text();
 
             let data;
 
@@ -45,79 +58,127 @@ export default async function handler(req, res) {
                 data = null;
             }
 
+
+            /*
+             * Roblox rejected the request
+             */
+
             if (!response.ok) {
                 return res.status(502).json({
                     success: false,
-                    message: "Roblox API request failed.",
-                    robloxHttp: response.status,
-                    robloxResponse: data || text
+                    message:
+                        "Roblox API request failed.",
+                    robloxHttp:
+                        response.status,
+                    robloxResponse:
+                        data || text
                 });
             }
 
-            if (!data || !Array.isArray(data.data)) {
-                return res.status(502).json({
-                    success: false,
-                    message: "Invalid response from Roblox API.",
-                    robloxResponse: data || text
-                });
-            }
 
-            const user = data.data.find(
-                item =>
-                    String(item.name).toLowerCase() ===
-                    username.toLowerCase()
-            );
+            /*
+             * Make sure Roblox returned users
+             */
 
-            if (!user) {
+            if (
+                !data ||
+                !Array.isArray(data.data) ||
+                data.data.length === 0
+            ) {
                 return res.status(404).json({
                     success: false,
-                    message: "Roblox account not found."
+                    message:
+                        "Roblox account not found."
                 });
             }
 
-            const uid = String(user.id);
+
+            const user =
+                data.data[0];
+
+
+            const uid =
+                String(user.id);
+
+
+            const actualUsername =
+                String(
+                    user.name || username
+                );
+
+
+            const displayName =
+                String(
+                    user.displayName ||
+                    actualUsername
+                );
+
+
+            /*
+             * Get avatar
+             */
 
             let avatarURL = "";
 
             try {
-                const avatarURLRequest =
-                    "https://thumbnails.roblox.com/v1/users/avatar-headshot?" +
-                    new URLSearchParams({
-                        userIds: uid,
-                        size: "150x150",
-                        format: "Png",
-                        isCircular: "false"
-                    }).toString();
 
                 const avatarResponse =
-                    await fetch(avatarURLRequest);
+                    await fetch(
+                        "https://thumbnails.roblox.com/v1/users/avatar-headshot?" +
+                        new URLSearchParams({
+                            userIds: uid,
+                            size: "150x150",
+                            format: "Png",
+                            isCircular: "false"
+                        }).toString(),
+                        {
+                            headers: {
+                                "Accept":
+                                    "application/json",
+                                "User-Agent":
+                                    "Astral/1.0"
+                            }
+                        }
+                    );
 
-                const avatarData =
-                    await avatarResponse.json();
 
-                avatarURL =
-                    avatarData?.data?.[0]?.imageUrl || "";
+                if (avatarResponse.ok) {
+
+                    const avatarData =
+                        await avatarResponse.json();
+
+                    avatarURL =
+                        avatarData
+                            ?.data
+                            ?. [0]
+                            ?.imageUrl || "";
+                }
 
             } catch {
                 avatarURL = "";
             }
 
+
+            /*
+             * Return clean Roblox data
+             */
+
             return res.status(200).json({
+
                 success: true,
 
                 data: {
+
                     uid: uid,
 
                     username:
-                        String(user.name),
+                        actualUsername,
 
                     displayName:
-                        String(
-                            user.displayName ||
-                            user.name
-                        ),
+                        displayName,
 
-                    avatarURL: avatarURL,
+                    avatarURL:
+                        avatarURL,
 
                     robloxProfileURL:
                         `https://www.roblox.com/users/${uid}/profile`
@@ -125,10 +186,16 @@ export default async function handler(req, res) {
             });
 
         } catch (error) {
+
             return res.status(500).json({
+
                 success: false,
-                message: "Roblox API connection failed.",
-                error: error.message
+
+                message:
+                    "Roblox API connection failed.",
+
+                error:
+                    error.message
             });
         }
     }
@@ -146,15 +213,22 @@ export default async function handler(req, res) {
         DISCORD_REDIRECT_URI
     } = process.env;
 
-    const code = req.query.code;
-    const state = req.query.state;
+
+    const code =
+        req.query.code;
+
+    const state =
+        req.query.state;
+
 
     if (!code) {
         return res.status(400).json({
             success: false,
-            message: "Missing OAuth code."
+            message:
+                "Missing OAuth code."
         });
     }
+
 
     if (
         !DISCORD_CLIENT_ID ||
@@ -163,33 +237,53 @@ export default async function handler(req, res) {
     ) {
         return res.status(500).json({
             success: false,
-            message: "OAuth environment variables are missing."
+            message:
+                "OAuth environment variables are missing."
         });
     }
 
+
     try {
-        const tokenResponse = await fetch(
-            "https://discord.com/api/oauth2/token",
-            {
-                method: "POST",
 
-                headers: {
-                    "Content-Type":
-                        "application/x-www-form-urlencoded"
-                },
+        /*
+         * Exchange Discord code
+         */
 
-                body: new URLSearchParams({
-                    client_id: DISCORD_CLIENT_ID,
-                    client_secret: DISCORD_CLIENT_SECRET,
-                    grant_type: "authorization_code",
-                    code: code,
-                    redirect_uri: DISCORD_REDIRECT_URI
-                })
-            }
-        );
+        const tokenResponse =
+            await fetch(
+                "https://discord.com/api/oauth2/token",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/x-www-form-urlencoded"
+                    },
+
+                    body:
+                        new URLSearchParams({
+                            client_id:
+                                DISCORD_CLIENT_ID,
+
+                            client_secret:
+                                DISCORD_CLIENT_SECRET,
+
+                            grant_type:
+                                "authorization_code",
+
+                            code:
+                                code,
+
+                            redirect_uri:
+                                DISCORD_REDIRECT_URI
+                        })
+                }
+            );
+
 
         const tokenData =
             await tokenResponse.json();
+
 
         if (
             !tokenResponse.ok ||
@@ -197,24 +291,36 @@ export default async function handler(req, res) {
         ) {
             return res.status(502).json({
                 success: false,
-                message: "Discord token exchange failed."
+                message:
+                    "Discord token exchange failed."
             });
         }
 
-        const userResponse = await fetch(
-            "https://discord.com/api/users/@me",
-            {
-                headers: {
-                    Authorization:
-                        `Bearer ${tokenData.access_token}`
+
+        /*
+         * Get Discord user
+         */
+
+        const userResponse =
+            await fetch(
+                "https://discord.com/api/users/@me",
+                {
+                    headers: {
+                        Authorization:
+                            `Bearer ${tokenData.access_token}`
+                    }
                 }
-            }
-        );
+            );
+
 
         const user =
             await userResponse.json();
 
-        if (!userResponse.ok || !user.id) {
+
+        if (
+            !userResponse.ok ||
+            !user.id
+        ) {
             return res.status(502).json({
                 success: false,
                 message:
@@ -222,22 +328,30 @@ export default async function handler(req, res) {
             });
         }
 
+
         let avatarURL = "";
 
+
         if (user.avatar) {
+
             avatarURL =
                 `https://cdn.discordapp.com/avatars/` +
                 `${user.id}/` +
                 `${user.avatar}.png?size=256`;
         }
 
+
         return res.status(200).json({
+
             success: true,
 
-            state: state || "",
+            state:
+                state || "",
 
             user: {
-                id: user.id,
+
+                id:
+                    user.id,
 
                 username:
                     user.username || "",
@@ -247,15 +361,22 @@ export default async function handler(req, res) {
                     user.username ||
                     "",
 
-                avatarURL
+                avatarURL:
+                    avatarURL
             }
         });
 
     } catch (error) {
+
         return res.status(500).json({
+
             success: false,
-            message: "OAuth backend error.",
-            error: error.message
+
+            message:
+                "OAuth backend error.",
+
+            error:
+                error.message
         });
     }
 }
