@@ -3,7 +3,7 @@ export default async function handler(req, res) {
 
     /*
     |--------------------------------------------------------------------------
-    | Roblox lookup
+    | ROBLOX
     |--------------------------------------------------------------------------
     */
 
@@ -20,28 +20,49 @@ export default async function handler(req, res) {
         }
 
         try {
-            const searchResponse = await fetch(
+            const robloxURL =
                 "https://users.roblox.com/v1/users/search?" +
                 new URLSearchParams({
                     keyword: username,
                     limit: "10"
-                })
-            );
+                }).toString();
 
-            const searchData =
-                await searchResponse.json();
+            const response = await fetch(robloxURL, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json",
+                    "User-Agent": "Astral/1.0"
+                }
+            });
 
-            if (!searchResponse.ok) {
+            const text = await response.text();
+
+            let data;
+
+            try {
+                data = JSON.parse(text);
+            } catch {
+                data = null;
+            }
+
+            if (!response.ok) {
                 return res.status(502).json({
                     success: false,
-                    message: "Roblox API request failed."
+                    message: "Roblox API request failed.",
+                    robloxHttp: response.status,
+                    robloxResponse: data || text
                 });
             }
 
-            const users =
-                searchData.data || [];
+            if (!data || !Array.isArray(data.data)) {
+                return res.status(502).json({
+                    success: false,
+                    message: "Invalid response from Roblox API.",
+                    robloxResponse: data || text
+                });
+            }
 
-            const user = users.find(
+            const user = data.data.find(
                 item =>
                     String(item.name).toLowerCase() ===
                     username.toLowerCase()
@@ -59,23 +80,24 @@ export default async function handler(req, res) {
             let avatarURL = "";
 
             try {
+                const avatarURLRequest =
+                    "https://thumbnails.roblox.com/v1/users/avatar-headshot?" +
+                    new URLSearchParams({
+                        userIds: uid,
+                        size: "150x150",
+                        format: "Png",
+                        isCircular: "false"
+                    }).toString();
+
                 const avatarResponse =
-                    await fetch(
-                        "https://thumbnails.roblox.com/v1/users/avatar-headshot?" +
-                        new URLSearchParams({
-                            userIds: uid,
-                            size: "150x150",
-                            format: "Png",
-                            isCircular: "false"
-                        })
-                    );
+                    await fetch(avatarURLRequest);
 
                 const avatarData =
                     await avatarResponse.json();
 
                 avatarURL =
-                    avatarData.data?.[0]?.imageUrl ||
-                    "";
+                    avatarData?.data?.[0]?.imageUrl || "";
+
             } catch {
                 avatarURL = "";
             }
@@ -103,10 +125,10 @@ export default async function handler(req, res) {
             });
 
         } catch (error) {
-
             return res.status(500).json({
                 success: false,
-                message: "Roblox API connection failed."
+                message: "Roblox API connection failed.",
+                error: error.message
             });
         }
     }
@@ -114,7 +136,7 @@ export default async function handler(req, res) {
 
     /*
     |--------------------------------------------------------------------------
-    | Discord OAuth
+    | DISCORD OAUTH
     |--------------------------------------------------------------------------
     */
 
@@ -141,8 +163,7 @@ export default async function handler(req, res) {
     ) {
         return res.status(500).json({
             success: false,
-            message:
-                "OAuth environment variables are missing."
+            message: "OAuth environment variables are missing."
         });
     }
 
@@ -158,20 +179,11 @@ export default async function handler(req, res) {
                 },
 
                 body: new URLSearchParams({
-                    client_id:
-                        DISCORD_CLIENT_ID,
-
-                    client_secret:
-                        DISCORD_CLIENT_SECRET,
-
-                    grant_type:
-                        "authorization_code",
-
-                    code:
-                        code,
-
-                    redirect_uri:
-                        DISCORD_REDIRECT_URI
+                    client_id: DISCORD_CLIENT_ID,
+                    client_secret: DISCORD_CLIENT_SECRET,
+                    grant_type: "authorization_code",
+                    code: code,
+                    redirect_uri: DISCORD_REDIRECT_URI
                 })
             }
         );
@@ -185,8 +197,7 @@ export default async function handler(req, res) {
         ) {
             return res.status(502).json({
                 success: false,
-                message:
-                    "Discord token exchange failed."
+                message: "Discord token exchange failed."
             });
         }
 
@@ -223,12 +234,10 @@ export default async function handler(req, res) {
         return res.status(200).json({
             success: true,
 
-            state:
-                state || "",
+            state: state || "",
 
             user: {
-                id:
-                    user.id,
+                id: user.id,
 
                 username:
                     user.username || "",
@@ -238,17 +247,15 @@ export default async function handler(req, res) {
                     user.username ||
                     "",
 
-                avatarURL:
-                    avatarURL
+                avatarURL
             }
         });
 
     } catch (error) {
-
         return res.status(500).json({
             success: false,
-            message:
-                "OAuth backend error."
+            message: "OAuth backend error.",
+            error: error.message
         });
     }
 }
