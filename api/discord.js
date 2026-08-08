@@ -1,4 +1,123 @@
 export default async function handler(req, res) {
+    const action = req.query.action || "discord";
+
+    /*
+    |--------------------------------------------------------------------------
+    | Roblox lookup
+    |--------------------------------------------------------------------------
+    */
+
+    if (action === "roblox") {
+        const username = String(
+            req.query.username || ""
+        ).trim();
+
+        if (!username) {
+            return res.status(400).json({
+                success: false,
+                message: "Roblox username is required."
+            });
+        }
+
+        try {
+            const searchResponse = await fetch(
+                "https://users.roblox.com/v1/users/search?" +
+                new URLSearchParams({
+                    keyword: username,
+                    limit: "10"
+                })
+            );
+
+            const searchData =
+                await searchResponse.json();
+
+            if (!searchResponse.ok) {
+                return res.status(502).json({
+                    success: false,
+                    message: "Roblox API request failed."
+                });
+            }
+
+            const users =
+                searchData.data || [];
+
+            const user = users.find(
+                item =>
+                    String(item.name).toLowerCase() ===
+                    username.toLowerCase()
+            );
+
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Roblox account not found."
+                });
+            }
+
+            const uid = String(user.id);
+
+            let avatarURL = "";
+
+            try {
+                const avatarResponse =
+                    await fetch(
+                        "https://thumbnails.roblox.com/v1/users/avatar-headshot?" +
+                        new URLSearchParams({
+                            userIds: uid,
+                            size: "150x150",
+                            format: "Png",
+                            isCircular: "false"
+                        })
+                    );
+
+                const avatarData =
+                    await avatarResponse.json();
+
+                avatarURL =
+                    avatarData.data?.[0]?.imageUrl ||
+                    "";
+            } catch {
+                avatarURL = "";
+            }
+
+            return res.status(200).json({
+                success: true,
+
+                data: {
+                    uid: uid,
+
+                    username:
+                        String(user.name),
+
+                    displayName:
+                        String(
+                            user.displayName ||
+                            user.name
+                        ),
+
+                    avatarURL: avatarURL,
+
+                    robloxProfileURL:
+                        `https://www.roblox.com/users/${uid}/profile`
+                }
+            });
+
+        } catch (error) {
+
+            return res.status(500).json({
+                success: false,
+                message: "Roblox API connection failed."
+            });
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Discord OAuth
+    |--------------------------------------------------------------------------
+    */
+
     const {
         DISCORD_CLIENT_ID,
         DISCORD_CLIENT_SECRET,
@@ -22,7 +141,8 @@ export default async function handler(req, res) {
     ) {
         return res.status(500).json({
             success: false,
-            message: "OAuth environment variables are missing."
+            message:
+                "OAuth environment variables are missing."
         });
     }
 
@@ -31,35 +151,42 @@ export default async function handler(req, res) {
             "https://discord.com/api/oauth2/token",
             {
                 method: "POST",
+
                 headers: {
                     "Content-Type":
                         "application/x-www-form-urlencoded"
                 },
+
                 body: new URLSearchParams({
-                    client_id: DISCORD_CLIENT_ID,
-                    client_secret: DISCORD_CLIENT_SECRET,
-                    grant_type: "authorization_code",
-                    code: code,
-                    redirect_uri: DISCORD_REDIRECT_URI
+                    client_id:
+                        DISCORD_CLIENT_ID,
+
+                    client_secret:
+                        DISCORD_CLIENT_SECRET,
+
+                    grant_type:
+                        "authorization_code",
+
+                    code:
+                        code,
+
+                    redirect_uri:
+                        DISCORD_REDIRECT_URI
                 })
             }
         );
 
-        const tokenData = await tokenResponse.json();
+        const tokenData =
+            await tokenResponse.json();
 
-        if (!tokenResponse.ok) {
+        if (
+            !tokenResponse.ok ||
+            !tokenData.access_token
+        ) {
             return res.status(502).json({
                 success: false,
-                message: "Discord rejected the token request.",
-                discord_http: tokenResponse.status,
-                discord_response: tokenData
-            });
-        }
-
-        if (!tokenData.access_token) {
-            return res.status(502).json({
-                success: false,
-                message: "Discord did not return an access token."
+                message:
+                    "Discord token exchange failed."
             });
         }
 
@@ -73,13 +200,14 @@ export default async function handler(req, res) {
             }
         );
 
-        const user = await userResponse.json();
+        const user =
+            await userResponse.json();
 
         if (!userResponse.ok || !user.id) {
             return res.status(502).json({
                 success: false,
-                message: "Unable to retrieve Discord user.",
-                discord_http: userResponse.status
+                message:
+                    "Unable to retrieve Discord user."
             });
         }
 
@@ -88,29 +216,39 @@ export default async function handler(req, res) {
         if (user.avatar) {
             avatarURL =
                 `https://cdn.discordapp.com/avatars/` +
-                `${user.id}/${user.avatar}.png?size=256`;
+                `${user.id}/` +
+                `${user.avatar}.png?size=256`;
         }
 
         return res.status(200).json({
             success: true,
-            state: state || "",
+
+            state:
+                state || "",
+
             user: {
-                id: user.id,
-                username: user.username || "",
+                id:
+                    user.id,
+
+                username:
+                    user.username || "",
+
                 displayName:
                     user.global_name ||
                     user.username ||
                     "",
-                avatarURL
+
+                avatarURL:
+                    avatarURL
             }
         });
 
     } catch (error) {
-        console.error(error);
 
         return res.status(500).json({
             success: false,
-            message: "OAuth backend error."
+            message:
+                "OAuth backend error."
         });
     }
 }
