@@ -5,22 +5,12 @@ export default async function handler(req, res) {
         DISCORD_REDIRECT_URI
     } = process.env;
 
-    if (!DISCORD_CLIENT_ID ||
-        !DISCORD_CLIENT_SECRET ||
-        !DISCORD_REDIRECT_URI) {
-
-        return res.status(500).json({
-            success: false,
-            message: "Discord OAuth environment variables are missing."
-        });
-    }
-
     const { code, state } = req.query;
 
-    if (!code || !state) {
+    if (!code) {
         return res.status(400).json({
             success: false,
-            message: "Missing OAuth code or state."
+            message: "Missing OAuth code."
         });
     }
 
@@ -43,16 +33,39 @@ export default async function handler(req, res) {
             }
         );
 
-        const tokenData =
-            await tokenResponse.json();
+        const tokenText =
+            await tokenResponse.text();
 
-        if (!tokenResponse.ok ||
-            !tokenData.access_token) {
+        let tokenData;
 
+        try {
+            tokenData = JSON.parse(tokenText);
+        } catch {
+            tokenData = {
+                raw: tokenText
+            };
+        }
+
+        if (!tokenResponse.ok) {
             return res.status(502).json({
                 success: false,
-                message: "Discord token exchange failed.",
-                discord: tokenData
+                message: "Discord rejected the token request.",
+                discord_http: tokenResponse.status,
+                discord_response: tokenData,
+                redirect_uri_used:
+                    DISCORD_REDIRECT_URI,
+                has_client_id:
+                    !!DISCORD_CLIENT_ID,
+                has_client_secret:
+                    !!DISCORD_CLIENT_SECRET
+            });
+        }
+
+        if (!tokenData.access_token) {
+            return res.status(502).json({
+                success: false,
+                message: "Discord did not return an access token.",
+                discord_response: tokenData
             });
         }
 
@@ -66,53 +79,49 @@ export default async function handler(req, res) {
             }
         );
 
-        const user =
+        const userData =
             await userResponse.json();
 
-        if (!userResponse.ok || !user.id) {
+        if (!userResponse.ok) {
             return res.status(502).json({
                 success: false,
-                message: "Unable to retrieve Discord user."
+                message: "Discord user request failed.",
+                discord_http:
+                    userResponse.status,
+                discord_response:
+                    userData
             });
         }
 
         let avatarURL = "";
 
-        if (user.avatar) {
+        if (userData.avatar) {
             avatarURL =
                 `https://cdn.discordapp.com/avatars/` +
-                `${user.id}/${user.avatar}.png?size=256`;
+                `${userData.id}/` +
+                `${userData.avatar}.png?size=256`;
         }
-
-        /*
-         * Return only the information your
-         * InfinityFree dashboard needs.
-         *
-         * The Discord access token is NEVER
-         * returned to the browser.
-         */
 
         return res.status(200).json({
             success: true,
-            state: state,
+            state: state || "",
             user: {
-                id: user.id,
-                username: user.username || "",
+                id: userData.id,
+                username: userData.username || "",
                 displayName:
-                    user.global_name ||
-                    user.username ||
+                    userData.global_name ||
+                    userData.username ||
                     "",
-                avatarURL: avatarURL
+                avatarURL
             }
         });
 
     } catch (error) {
 
-        console.error(error);
-
         return res.status(500).json({
             success: false,
-            message: "OAuth backend error."
+            message: "OAuth backend error.",
+            error: error.message
         });
     }
 }
